@@ -1,4 +1,4 @@
-- 1. How many campaigns and sources does CoolTShirts use? Which source is used for each campaign?
+-- 1. How many campaigns and sources does CoolTShirts use? Which source is used for each campaign?
 SELECT COUNT(DISTINCT utm_campaign)
 FROM page_visits;
 -- How many campaigns: 8
