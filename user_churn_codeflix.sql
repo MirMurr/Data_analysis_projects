@@ -85,7 +85,3 @@ month,
 CAST (1.0 * sum_canceled_87 / sum_active_87 * 100 AS DECIMAL(5,2)) AS percentage_87,
 CAST (1.0 * sum_canceled_30 / sum_active_30 * 100 AS DECIMAL(5,2)) AS percentage_30
 FROM status_aggregate;
-  -- The segment 30 performs better, the churn rates are low, however in March it slightly increased compared to the previous 2 months.
-
---3. Compare the churn rates between user segments. Which segment of users should the company focus on expanding?
-  -- The company should focus on expanding the segment 30. They should try to improve segment 87, cause the churn rate shows a growing trend and in March it reached 48,59%. 
