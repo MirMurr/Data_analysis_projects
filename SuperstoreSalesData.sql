@@ -1,0 +1,357 @@
+-- Check tables
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public';
+
+-- rename the table
+--ALTER TABLE "sample_-_superstore" RENAME TO superstore;
+-- Select order date as date without timestamp
+--select order_date::date as order_date
+--from superstore
+--group by 1
+--order by 1;
+-- Alter the Order Date Column
+--alter table superstore
+--add column order_date_clean DATE;
+-- Add a new column
+--update superstore
+--set order_date_clean = order_date::date;
+-- Delete new added column
+--alter table superstore
+--drop column order_date_clean;
+-- Select the month (number format) from date
+--select order_date, extract(month from order_date) as "order_month" from superstore limit 5;
+
+-- REVENUE & PROFIT
+-- Totals: Revenue & Profit, Items sold
+select SUM(sales)::numeric as "total_revenue",
+SUM(profit)::numeric as "total_profit",
+SUM(quantity) as "total_items_sold"
+from superstore;
+
+-- Revenue, Profit, Sales Volume by month
+select extract(year from order_date) as "order_year",
+extract(month from order_date) as "order_month",
+SUM(sales) as "monthly_revenue",
+SUM(profit) as "monthly_profit",
+SUM(quantity) as "items_sold_total",
+SUM(distinct quantity) as "unique_items_sold"
+from superstore
+group by 1, 2
+order by 1, 2;
+
+-- Annual Revenue, Profit
+select extract(year from order_date) as "order_year",
+SUM(sales) as "annual revenue",
+SUM(profit) as "annual profit"
+from superstore
+group by 1
+order by 1;
+select * from superstore limit 5;
+
+-- Year over Year Revenue and Profit Change
+select extract(year from order_date) as "year",
+  
+-- Revenue YoY Change
+SUM(sales) as "revenue",
+LAG(SUM(sales)) over (order by extract(year from order_date)) as "previous_year_revenue",
+SUM(sales) - LAG(SUM(sales)) over (order by extract(year from order_date)) as "revenue_change",
+ROUND(
+((SUM(sales)::numeric - LAG(SUM(sales)) over (order by extract(year from order_date))::numeric) * 100.0) /
+NULLIF(LAG(SUM(sales)) over (order by extract(year from order_date))::numeric, 0), 2
+) AS "revenue_change_percentage",
+  
+-- Profit YoY Change
+SUM(profit) as "profit",
+LAG(SUM(profit)) over (order by extract(year from order_date)) as "previous_year_profit",
+SUM(profit) - LAG(SUM(profit)) over (order by extract(year from order_date)) as "profit_change",
+ROUND(
+((SUM(profit)::numeric - LAG(SUM(profit)) over (order by extract(year from order_date))::numeric) * 100.0) /
+NULLIF(lag(SUM(profit)) over (order by extract(year from order_date))::numeric, 0), 2
+) AS "profit_change_percentage"
+from superstore
+group by 1
+order by 1;
+
+-- Annual Average Revenue & Profit Growth - linear growth
+select extract(year from order_date) as "year",
+ROUND(SUM(profit)::numeric, 2) as "total_profit",
+ROUND(SUM(sales)::numeric, 2) as "total_sales"
+from superstore
+group by 1
+order by 1;
+with recursive yearly_data as (
+	select
+		extract(year from order_date) as "year",
+		SUM(sales)::numeric as "revenue",
+		SUM(profit)::numeric as "profit"
+	from superstore
+	group by 1
+),
+growth_calc as (
+	select
+		year,
+		revenue,
+		profit,
+		LAG(revenue) over (order by year) as "prev_revenue",
+		LAG(profit) over (order by year) as "prev_profit"
+	from yearly_data
+),
+growth_rate as (
+	select
+		year,
+		revenue,
+		profit,
+		ROUND((revenue::numeric - prev_revenue::numeric) / NULLIF(prev_revenue::numeric, 0) * 100, 2) AS "revenue_growth_pct",
+		ROUND((profit::numeric - prev_profit::numeric) / NULLIF(prev_profit::numeric, 0) * 100, 2) AS "profit_growth_pct"
+	from growth_calc
+		),
+average_growth as (
+	select
+		ROUND(AVG(revenue_growth_pct)::numeric / 100, 2) as "avg_revenue_growth",
+		ROUND(AVG(profit_growth_pct)::numeric / 100, 2) as "avg_profit_growth"
+	from growth_rate
+),
+latest_year as (
+	select
+		year,
+		revenue,
+		profit
+	from growth_rate
+	order by year desc
+	limit 1
+),
+forecast (year, revenue, profit, step) AS (
+ -- Anchor member (initial row)
+ select
+   latest_year.year + 1 as year,
+   ROUND(latest_year.revenue * (1 + average_growth.avg_revenue_growth), 2) AS revenue,
+   ROUND(latest_year.profit * (1 + average_growth.avg_profit_growth), 2) AS profit,
+   1 as step
+ from latest_year, average_growth
+ union all
+ -- Recursive member
+ select
+   f.year + 1,
+   ROUND(f.revenue * (1 + ag.avg_revenue_growth), 2),
+   ROUND(f.profit * (1 + ag.avg_profit_growth), 2),
+   f.step + 1
+ from forecast f, average_growth ag
+ where f.step < 5
+)
+select * from forecast;
+
+-- PRODUCTS
+-- Profit Margin by Category , here both values need to be numeric so we need to cast (::numeric).
+select category,
+ROUND((SUM(profit) / SUM(sales) * 100)::numeric, 2) as "profit_margin"
+from superstore
+group by 1
+order by 2 desc;
+
+-- Top 10 Products (product ID, sub-category, product name) by quantity sold
+select product_name,
+category,
+SUM(quantity) as "qty"
+from superstore
+group by 1, 2
+order by 3 desc
+limit 10;
+
+-- Top 10 Products (product ID, sub-category, product name) by profit
+select product_name,
+product_id,
+category,
+ROUND(SUM(profit)::numeric, 2) as "profit"
+from superstore
+group by 1, 2, 3
+order by 4 desc
+limit 10;
+
+-- Last 10 Products (product ID, sub-category, product name) by quantity sold
+select product_name,
+category,
+SUM(quantity) as "qty"
+from superstore
+group by 1, 2
+order by 3 asc
+limit 10;
+
+-- Last 10 Products (product ID, sub-category, product name) by profit
+select product_name, product_id,
+category,
+ROUND(SUM(profit)::numeric, 2) as "profit"
+from superstore
+group by 1, 2, 3
+order by 4 asc
+limit 10;
+
+-- All products with negative profit
+select product_name,
+product_id,
+category,
+ROUND(SUM(profit)::numeric, 2) as "profit"
+from superstore
+group by 1, 2, 3
+having SUM(profit) < 0
+order by 4 asc;
+
+-- Revenue & Profit, Percentage of Revenue & Profit by category
+select category,
+ROUND(SUM(sales)::numeric, 2) as "revenue",
+ROUND(SUM(sales)::numeric / (select sum(sales)::numeric from superstore) * 100,2) as "percentage_revenue",
+ROUND(SUM(profit)::numeric, 2) as "profit",
+ROUND(SUM(profit)::numeric / (select sum(profit)::numeric from superstore) * 100,2) as "percentage_profit"
+from superstore
+group by 1
+order by 4 desc;
+
+-- REGION
+	-- REGION - STATE Statistics
+-- Profit & Revenue by state & (revenue percentage, profit percentage)
+select state,
+round(sum(sales)::numeric,2) as "revenue_by_state",
+round((sum(sales)::numeric / (select sum(sales)::numeric from superstore) * 100),2) as "revenue_percentage",
+round(sum(profit)::numeric,2) as "profit_by_state",
+round((sum(profit)::numeric / (select sum(profit)::numeric from superstore) * 100),2) as "profit_percentage"
+from superstore
+group by 1
+order by 4 desc;
+
+-- State with the highest number of item sales
+select state,
+SUM(quantity) as "most_items_sold"
+from superstore
+group by 1
+order by 2 desc
+limit 1;
+
+-- State with the lowest number of item sales
+select state,
+SUM(quantity) as "least_items_sold"
+from superstore
+group by 1
+order by 2 asc
+limit 1;
+
+-- Least profitable state
+select state as "least_profitable_state",
+SUM(profit)::numeric as "profit"
+from superstore
+group by 1
+order by 2 asc
+limit 1;
+
+-- Most profitable state
+select state as "least_profitable_state",
+SUM(profit)::numeric as "profit"
+from superstore
+group by 1
+order by 2 desc
+limit 1;
+
+	--REGION - region statistics
+-- Revenue & Profit by region & (revenue percentage, profit percentage)
+select region,
+ROUND(SUM(sales)::numeric,2) as "revenue_by_region",
+ROUND((SUM(sales)::numeric / (select SUM(sales)::numeric from superstore) * 100),2) as "revenue_percentage",
+ROUND(SUM(profit)::numeric,2) as "profit_by_region",
+ROUND((SUM(profit)::numeric / (select SUM(profit)::numeric from superstore) * 100),2) as "profit_percentage",
+SUM(quantity) as "items_sold"
+from superstore
+group by 1
+order by 4 desc;
+
+-- REGION - city statistics
+select city,
+SUM(sales)::numeric as "revenue_by_city",
+SUM(profit)::numeric as "profit_by_city",
+ROUND((SUM(sales)::numeric / (select SUM(sales)::numeric from superstore) * 100),2) as "revenue_percentage",
+ROUND((SUM(profit)::numeric / (select SUM(profit)::numeric from superstore) * 100),2) as "profit_percentage"
+from superstore
+group by 1
+order by 2 desc;
+
+-- Reorder Rates by Product Group - Subquery
+-- Reorder Rate = (Number of Customers who ordered the product more than once) / (Total Number of Customers who ordered the product at all)
+select
+ category as product_category,
+ ROUND(
+   COUNT(distinct case when order_count > 1 then customer_id END) * 100.0 / COUNT(distinct customer_id), 2) as reorder_rate
+from (
+ select
+   customer_id,
+   category,
+   COUNT(*) AS order_count
+ from superstore
+ group by 1, 2
+) as sub
+group by 1
+order by 2 desc;
+
+-- Reorder Rate Window Function, by category and year
+with customer_orders as (
+	select customer_id,
+		category,
+		extract (year from order_date) as "year",
+		COUNT(*) over (
+     		partition by customer_id, category, extract(year from order_date)
+   ) as order_count
+	from superstore
+	--group by 1, 2, 3
+),
+-- value = 1 when customer ordered more than once
+reorder_num as (
+	select distinct customer_id,
+		category,
+		year,
+		case
+			when order_count > 1 then 1 else 0
+		end as "reordered"
+	from customer_orders
+)
+-- SUM the reordered column and divide it by the number of customers -> gives the reorder rate
+select year,
+	category,
+	ROUND(SUM(reordered)::numeric * 100.0 / COUNT(distinct customer_id), 2) as "reorder_rate"
+from reorder_num
+group by 1, 2
+order by 1 asc, 3 desc;
+
+--Reorder rate by year
+with customer_orders as (
+	select customer_id,
+		extract (year from order_date) as "year",
+		COUNT(*) over (
+     		partition by customer_id, extract(year from order_date)
+   ) as order_count
+	from superstore
+	--group by 1, 2, 3
+),
+-- value = 1 when customer ordered more than once
+reorder_num as (
+	select distinct customer_id,
+		year,
+		case
+			when order_count > 1 then 1 else 0
+		end as "reordered"
+	from customer_orders
+)
+-- SUM the reordered column and divide it by the number of customers -> gives the reorder rate
+select year,
+	ROUND(SUM(reordered)::numeric * 100.0 / COUNT(distinct customer_id), 2) as "reorder_rate"
+from reorder_num
+group by 1
+order by 1 asc;
+
+-- Annual profit by state
+select
+EXTRACT(year from order_date) as "year",
+state,
+SUM(profit)::numeric as "annual_profit",
+SUM(sales)::numeric as "annual_revenue"
+from superstore
+where state is not null
+group by 2, 1
+order by 1, 2 asc;
+
